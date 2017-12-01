@@ -20,6 +20,7 @@ type Process struct {
 	lastCoID      uint32
 	lastCallID    uint32
 	frameTime     time.Time
+	stopFlag      bool
 	r             Reactor
 }
 
@@ -32,6 +33,7 @@ func newProcess(id uint32, r Reactor) *Process {
 		lastCoID:      0,
 		lastCallID:    0,
 		frameTime:     time.Time{},
+		stopFlag:      false,
 		r:             r,
 	}
 }
@@ -42,16 +44,24 @@ func (p *Process) start() {
 }
 
 func (p *Process) stop() {
-	p.sendMessage(&msgSysProcessStop{})
+	p.stopFlag = true
 }
 
 func (p *Process) loop() {
 	p.frameTime = time.Now()
 
-	for {
+	for !p.stopFlag {
 		p.processMsg()
 		p.processTick()
 	}
+
+	co := newCoroutine(p.nextCoID())
+	ret := co.start(p.r.OnReceive, &ProcessContext{p, co, &msgSysProcessStop{}})
+	if ret != nil {
+		// TODO: log here
+	}
+
+	p.cleanup()
 }
 
 func (p *Process) processMsg() {
@@ -142,4 +152,7 @@ func (p *Process) setResumeHandler(handler ResumeHandler) {
 func (p *Process) nextCallID() uint32 {
 	p.lastCallID++
 	return p.lastCallID
+}
+
+func (p *Process) cleanup() {
 }

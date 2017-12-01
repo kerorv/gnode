@@ -14,10 +14,6 @@ func (ctx *ProcessContext) Msg() interface{} {
 	return ctx.msg
 }
 
-func (ctx *ProcessContext) Yield(value interface{}) interface{} {
-	return ctx.c.resume(value)
-}
-
 func (ctx *ProcessContext) PID() uint32 {
 	return ctx.p.id
 }
