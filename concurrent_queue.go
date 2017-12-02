@@ -41,3 +41,15 @@ func (q *concurrentQueue) count() int {
 
 	return q.items.Len()
 }
+
+func (q *concurrentQueue) exchange(newL *list.List) *list.List {
+	if newL == nil {
+		return nil
+	}
+
+	q.mutex.Lock()
+	defer q.mutex.Unlock()
+
+	q.items, newL = newL, q.items
+	return newL
+}
