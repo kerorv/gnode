@@ -36,7 +36,7 @@ func (ctx *ProcessContext) Call(to uint32, methodName string, request interface{
 		request:    request,
 	}
 
-	SendMsgTo(msg.to, msg)
+	SendMessageTo(msg.to, msg)
 
 	ret := ctx.c.yield(timeout)
 	switch ret.(type) {

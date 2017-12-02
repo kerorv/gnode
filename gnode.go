@@ -48,7 +48,7 @@ func Stop() {
 
 	// stop all processes
 	gsys.pm.RLock()
-	for id, p := range gsys.pm.processes {
+	for _, p := range gsys.pm.processes {
 		p.stop()
 	}
 	gsys.pm.RUnlock()
