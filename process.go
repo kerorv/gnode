@@ -2,25 +2,38 @@ package gnode
 
 import (
 	"errors"
+	"reflect"
+	"sync"
 	"time"
 )
-
-type ResumeHandler func(msg interface{}) uint32
 
 type suspendCoroutine struct {
 	co         *coroutine
 	resumeTime time.Time
+	callID     uint32
 }
 
+type yieldValue struct {
+	timout uint32
+	callID uint32
+}
+
+type resumeValue struct {
+	response interface{}
+	err      error
+}
+
+// Process is an excute unit in gnode system.
 type Process struct {
 	id            uint32
 	supCoroutines []*suspendCoroutine
 	msgQ          *concurrentQueue
-	rh            ResumeHandler
 	lastCoID      uint32
 	lastCallID    uint32
 	frameTime     time.Time
 	stopFlag      bool
+	stopC         chan int32
+	doneWG        sync.WaitGroup
 	r             Reactor
 }
 
@@ -29,73 +42,70 @@ func newProcess(id uint32, r Reactor) *Process {
 		id:            id,
 		supCoroutines: make([]*suspendCoroutine, 0, 8),
 		msgQ:          newConcurrentQueue(),
-		rh:            nil,
-		lastCoID:      0,
-		lastCallID:    0,
 		frameTime:     time.Time{},
 		stopFlag:      false,
+		stopC:         make(chan int32),
 		r:             r,
 	}
 }
 
 func (p *Process) start() {
-	p.sendMessage(&msgSysProcessStart{})
+	p.sendMessage(&MsgProcessStart{})
 	go p.loop()
 }
 
 func (p *Process) stop() {
+	p.stopC <- 0
+	p.doneWG.Wait()
+}
+
+func (p *Process) internalStop() {
 	p.stopFlag = true
 }
 
 func (p *Process) loop() {
 	p.frameTime = time.Now()
+	p.doneWG.Add(1)
 
 	for !p.stopFlag {
 		p.processMsg()
 		p.processTick()
 	}
 
-	co := newCoroutine(p.nextCoID())
-	ret := co.start(p.r.OnReceive, &ProcessContext{p, co, &msgSysProcessStop{}})
-	if ret != nil {
-		// TODO: log here
-	}
-
+	p.r.OnReceive(&ProcessContext{p, nil, &MsgProcessStop{}})
 	p.cleanup()
+
+	p.doneWG.Done()
 }
 
 func (p *Process) processMsg() {
 	const maxProcessMsgCount = 64
 	for i := 0; i < maxProcessMsgCount; i++ {
-	begin:
 		msg := p.msgQ.pop()
 		if msg == nil {
 			return
 		}
 
-		// resume handler
-		if p.rh != nil {
-			if coid := p.rh(msg); coid != 0 {
-				for i, sc := range p.supCoroutines {
-					if sc.co.id == coid {
-						// resume this coroutine
-						if sc.co.resume(msg) == nil {
-							// coroutine is termination, remove it
-							p.supCoroutines = append(p.supCoroutines[:i], p.supCoroutines[i+1:]...)
-						}
-						goto begin
-					}
-				}
-			}
+		// handle call
+		switch msg.(type) {
+		case *msgProcessCallRequest:
+			callReq := msg.(*msgProcessCallRequest)
+			p.onCallRequest(callReq.from, callReq.callID, callReq.methodName, callReq.request)
+			continue
+		case *msgProcessCallResponse:
+			callRep := msg.(*msgProcessCallResponse)
+			p.onCallResponse(callRep.from, callRep.callID, callRep.response, callRep.err)
+			continue
 		}
 
 		// start a new coroutine
 		co := newCoroutine(p.nextCoID())
-		yieldValue := co.start(p.r.OnReceive, &ProcessContext{p, co, msg})
-		if yieldValue != nil {
-			resumeTime := p.frameTime.Add(yieldValue.(time.Duration) * time.Millisecond)
+		yieldData := co.start(p.r.OnReceive, &ProcessContext{p, co, msg})
+		if yieldData != nil {
+			yv := yieldData.(*yieldValue)
+			resumeTime := p.frameTime.Add(time.Duration(yv.timout) * time.Millisecond)
 			// coroutine is suspend, add to suspend list
-			p.supCoroutines = append(p.supCoroutines, &suspendCoroutine{co, resumeTime})
+			p.supCoroutines = append(p.supCoroutines, &suspendCoroutine{co, resumeTime, yv.callID})
 		}
 	}
 }
@@ -111,11 +121,19 @@ func (p *Process) processTick() {
 		// process is busy
 		// TODO: log here
 
+		select {
+		case <-p.stopC:
+			p.stopFlag = true
+		default:
+		}
 		p.frameTime.Add(costTime)
 	} else {
 		sleepTime := frameInterval - costTime
-		<-time.After(sleepTime)
-
+		select {
+		case <-p.stopC:
+			p.stopFlag = true
+		case <-time.After(sleepTime):
+		}
 		p.frameTime.Add(frameInterval)
 	}
 }
@@ -127,13 +145,39 @@ func (p *Process) onTick() {
 	for i := len(p.supCoroutines) - 1; i >= 0; i-- {
 		sc := p.supCoroutines[i]
 		if p.frameTime.After(sc.resumeTime) || p.frameTime.Equal(sc.resumeTime) {
-			sc.co.resume(errCoResumeTimeout)
+			sc.co.resume(&resumeValue{nil, errCoResumeTimeout})
+			// remove this coroutine
 			p.supCoroutines = append(p.supCoroutines[:i], p.supCoroutines[i+1:]...)
 		}
 	}
 
 	// design timer service
 	// TODO
+}
+
+func (p *Process) onCallRequest(from uint32, callID uint32, methodName string, param interface{}) {
+	method := reflect.ValueOf(p.r).MethodByName(methodName)
+	inputs := make([]reflect.Value, 1)
+	inputs[0] = reflect.ValueOf(param)
+	outputs := method.Call(inputs)
+	var ret interface{}
+	if len(outputs) > 0 {
+		ret = outputs[0].Interface()
+	}
+
+	response := &msgProcessCallResponse{callID, p.id, from, ret, nil}
+	SendMessageTo(from, response)
+}
+
+func (p *Process) onCallResponse(from uint32, callID uint32, response interface{}, err error) {
+	for i, supCo := range p.supCoroutines {
+		if supCo.callID == callID {
+			p.supCoroutines = append(p.supCoroutines[:i], p.supCoroutines[i+1:]...)
+			rv := &resumeValue{response, err}
+			supCo.co.resume(rv)
+			return
+		}
+	}
 }
 
 func (p *Process) nextCoID() uint32 {
@@ -143,10 +187,6 @@ func (p *Process) nextCoID() uint32 {
 
 func (p *Process) sendMessage(msg interface{}) {
 	p.msgQ.push(msg)
-}
-
-func (p *Process) setResumeHandler(handler ResumeHandler) {
-	p.rh = handler
 }
 
 func (p *Process) nextCallID() uint32 {

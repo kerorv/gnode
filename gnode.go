@@ -65,6 +65,7 @@ func (g *gSystem) loop() {
 	t := time.Now()
 	l := list.New()
 	for {
+		l.Init()
 		l = g.ipcMsgQ.exchange(l)
 		for e := l.Front(); e != nil; e = e.Next() {
 			imsg := e.Value.(ipcMessage)
@@ -86,6 +87,8 @@ func (g *gSystem) loop() {
 				return
 			}
 		}
+
+		t = now
 	}
 }
 
@@ -102,12 +105,12 @@ func (g *gSystem) getProcess(pid uint32) *Process {
 
 func (g *gSystem) addProcess(p *Process) bool {
 	g.pm.Lock()
-	_, ok := g.pm.processes[p.id]
-	if !ok {
+	_, exist := g.pm.processes[p.id]
+	if !exist {
 		g.pm.processes[p.id] = p
 	}
 	g.pm.Unlock()
-	return ok
+	return !exist
 }
 
 func (g *gSystem) removeProcess(pid uint32) {
