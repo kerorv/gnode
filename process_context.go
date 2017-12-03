@@ -4,31 +4,36 @@ import (
 	"errors"
 )
 
+// ProcessContext is context of a process
 type ProcessContext struct {
 	p   *Process
-	c   *coroutine
+	c   *coroutine // may be nil
 	msg interface{}
 }
 
+// Msg return current received message
 func (ctx *ProcessContext) Msg() interface{} {
 	return ctx.msg
 }
 
+// PID return id of current process
 func (ctx *ProcessContext) PID() uint32 {
 	return ctx.p.id
 }
 
-func (ctx *ProcessContext) CoID() uint32 {
-	return ctx.c.id
-}
+var errCallUnknowReturn = errors.New("Call return unknown type value")
+var errCallNoCoroutine = errors.New("Call fail since hasn't coroutine")
 
-func (ctx *ProcessContext) SetResumeHandler(handler ResumeHandler) {
-	ctx.p.setResumeHandler(handler)
-}
-
+// Call is a remote function call, it will block current coroutine,
+// but won't block process.
 func (ctx *ProcessContext) Call(to uint32, methodName string, request interface{},
 	timeout uint32 /*millisecond*/) (interface{}, error) {
-	msg := &msgSysCallRequest{
+	if ctx.c == nil {
+		// coroutine may be nil when process is stopping
+		return nil, errCallNoCoroutine
+	}
+
+	msg := &msgProcessCallRequest{
 		callID:     ctx.p.nextCallID(),
 		from:       ctx.p.id,
 		to:         to,
@@ -37,15 +42,14 @@ func (ctx *ProcessContext) Call(to uint32, methodName string, request interface{
 	}
 
 	SendMessageTo(msg.to, msg)
+	yv := &yieldValue{timeout, msg.callID}
 
-	ret := ctx.c.yield(timeout)
+	ret := ctx.c.yield(yv)
 	switch ret.(type) {
-	case *msgSysCallResponse:
-		res := ret.(*msgSysCallResponse)
-		return res.response, res.err
-	case error:
-		return nil, ret.(error)
+	case *resumeValue:
+		rv := ret.(*resumeValue)
+		return rv.response, rv.err
 	default:
-		return nil, errors.New("Call return unknown type value")
+		return nil, errCallUnknowReturn
 	}
 }

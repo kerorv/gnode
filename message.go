@@ -1,9 +1,9 @@
 package gnode
 
-type msgSysProcessStart struct{}
-type msgSysProcessStop struct{}
+type MsgProcessStart struct{}
+type MsgProcessStop struct{}
 
-type msgSysCallRequest struct {
+type msgProcessCallRequest struct {
 	callID     uint32
 	from       uint32
 	to         uint32
@@ -11,7 +11,7 @@ type msgSysCallRequest struct {
 	request    interface{}
 }
 
-type msgSysCallResponse struct {
+type msgProcessCallResponse struct {
 	callID   uint32
 	from     uint32
 	to       uint32
