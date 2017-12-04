@@ -14,12 +14,12 @@ type suspendCoroutine struct {
 }
 
 type yieldValue struct {
-	timout uint32
+	timout time.Duration
 	callID uint32
 }
 
 type resumeValue struct {
-	response interface{}
+	response []interface{}
 	err      error
 }
 
@@ -103,7 +103,7 @@ func (p *Process) processMsg() {
 		yieldData := co.start(p.r.OnReceive, &ProcessContext{p, co, msg})
 		if yieldData != nil {
 			yv := yieldData.(*yieldValue)
-			resumeTime := p.frameTime.Add(time.Duration(yv.timout) * time.Millisecond)
+			resumeTime := p.frameTime.Add(yv.timout)
 			// coroutine is suspend, add to suspend list
 			p.supCoroutines = append(p.supCoroutines, &suspendCoroutine{co, resumeTime, yv.callID})
 		}
@@ -155,21 +155,23 @@ func (p *Process) onTick() {
 	// TODO
 }
 
-func (p *Process) onCallRequest(from uint32, callID uint32, methodName string, param interface{}) {
+func (p *Process) onCallRequest(from uint32, callID uint32, methodName string, params []interface{}) {
 	method := reflect.ValueOf(p.r).MethodByName(methodName)
-	inputs := make([]reflect.Value, 1)
-	inputs[0] = reflect.ValueOf(param)
+	inputs := make([]reflect.Value, len(params))
+	for i, p := range params {
+		inputs[i] = reflect.ValueOf(p)
+	}
 	outputs := method.Call(inputs)
-	var ret interface{}
-	if len(outputs) > 0 {
-		ret = outputs[0].Interface()
+	ret := make([]interface{}, len(outputs))
+	for i, o := range outputs {
+		ret[i] = o.Interface()
 	}
 
 	response := &msgProcessCallResponse{callID, p.id, from, ret, nil}
 	RouteMessage(from, response)
 }
 
-func (p *Process) onCallResponse(from uint32, callID uint32, response interface{}, err error) {
+func (p *Process) onCallResponse(from uint32, callID uint32, response []interface{}, err error) {
 	for i, supCo := range p.supCoroutines {
 		if supCo.callID == callID {
 			p.supCoroutines = append(p.supCoroutines[:i], p.supCoroutines[i+1:]...)

@@ -8,13 +8,13 @@ type msgProcessCallRequest struct {
 	from       uint32
 	to         uint32
 	methodName string
-	request    interface{}
+	request    []interface{}
 }
 
 type msgProcessCallResponse struct {
 	callID   uint32
 	from     uint32
 	to       uint32
-	response interface{}
+	response []interface{}
 	err      error
 }
