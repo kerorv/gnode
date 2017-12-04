@@ -71,7 +71,7 @@ func (g *gSystem) loop() {
 			imsg := e.Value.(ipcMessage)
 			p := g.getProcess(imsg.to)
 			if p != nil {
-				p.sendMessage(imsg.msg)
+				p.postMessage(imsg.msg)
 			}
 		}
 
@@ -153,10 +153,10 @@ func DestroyProcess(pid uint32) {
 	p.stop()
 }
 
-// SendMessageTo send a messag to a process
-func SendMessageTo(to uint32, msg interface{}) {
+// RouteMessage reoute a messag to the target process
+func RouteMessage(target uint32, msg interface{}) {
 	if gsys == nil {
 		return
 	}
-	gsys.ipcMsgQ.push(ipcMessage{to, msg})
+	gsys.ipcMsgQ.push(ipcMessage{target, msg})
 }

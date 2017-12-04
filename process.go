@@ -50,7 +50,7 @@ func newProcess(id uint32, r Reactor) *Process {
 }
 
 func (p *Process) start() {
-	p.sendMessage(&MsgProcessStart{})
+	p.postMessage(&MsgProcessStart{})
 	go p.loop()
 }
 
@@ -166,7 +166,7 @@ func (p *Process) onCallRequest(from uint32, callID uint32, methodName string, p
 	}
 
 	response := &msgProcessCallResponse{callID, p.id, from, ret, nil}
-	SendMessageTo(from, response)
+	RouteMessage(from, response)
 }
 
 func (p *Process) onCallResponse(from uint32, callID uint32, response interface{}, err error) {
@@ -185,7 +185,7 @@ func (p *Process) nextCoID() uint32 {
 	return p.lastCoID
 }
 
-func (p *Process) sendMessage(msg interface{}) {
+func (p *Process) postMessage(msg interface{}) {
 	p.msgQ.push(msg)
 }
 
