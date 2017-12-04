@@ -1,5 +1,7 @@
 package gnode
 
+import "fmt"
+
 const (
 	suspend = 1
 	running = 2
@@ -9,6 +11,7 @@ const (
 type coroutine struct {
 	id      uint32
 	status  int32
+	panicE  error
 	yieldC  chan interface{}
 	resumeC chan interface{}
 }
@@ -19,6 +22,7 @@ func newCoroutine(id uint32) *coroutine {
 	return &coroutine{
 		id:      id,
 		status:  stop,
+		panicE:  nil,
 		yieldC:  make(chan interface{}),
 		resumeC: make(chan interface{}),
 	}
@@ -27,10 +31,20 @@ func newCoroutine(id uint32) *coroutine {
 func (c *coroutine) start(f coroutineFunc, pc *ProcessContext) interface{} {
 	c.status = running
 	go func() {
-		f(pc)
+		defer func() {
+			if r := recover(); r != nil {
+				var ok bool
+				c.panicE, ok = r.(error)
+				if !ok {
+					c.panicE = fmt.Errorf("coroutine panic: %v", r)
+				}
+			}
 
-		c.status = stop
-		c.yieldC <- nil
+			c.status = stop
+			c.yieldC <- nil
+		}()
+
+		f(pc)
 	}()
 
 	return <-c.yieldC

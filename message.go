@@ -2,6 +2,9 @@ package gnode
 
 type MsgProcessStart struct{}
 type MsgProcessStop struct{}
+type MsgProcessCoroutinePanic struct {
+	Err error
+}
 
 type msgProcessCallRequest struct {
 	callID     uint32

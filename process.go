@@ -2,6 +2,7 @@ package gnode
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -72,7 +73,7 @@ func (p *Process) loop() {
 		p.processTick()
 	}
 
-	p.r.OnReceive(&ProcessContext{p, nil, &MsgProcessStop{}})
+	p.invokeReactorDirectly(&ProcessContext{p, nil, &MsgProcessStop{}})
 	p.cleanup()
 
 	p.doneWG.Done()
@@ -100,13 +101,8 @@ func (p *Process) processMsg() {
 
 		// start a new coroutine
 		co := newCoroutine(p.nextCoID())
-		yieldData := co.start(p.r.OnReceive, &ProcessContext{p, co, msg})
-		if yieldData != nil {
-			yv := yieldData.(*yieldValue)
-			resumeTime := p.frameTime.Add(yv.timout)
-			// coroutine is suspend, add to suspend list
-			p.supCoroutines = append(p.supCoroutines, &suspendCoroutine{co, resumeTime, yv.callID})
-		}
+		yd := co.start(p.r.OnReceive, &ProcessContext{p, co, msg})
+		p.onYield(co, yd)
 	}
 }
 
@@ -142,12 +138,15 @@ var errCoResumeTimeout = errors.New("coroutine resume timeout")
 
 func (p *Process) onTick() {
 	// scan suspend coroutines
-	for i := len(p.supCoroutines) - 1; i >= 0; i-- {
+	colen := len(p.supCoroutines) // MUST use this len cache since onYield() would append coroutine
+	for i := colen - 1; i >= 0; i-- {
 		sc := p.supCoroutines[i]
 		if p.frameTime.After(sc.resumeTime) || p.frameTime.Equal(sc.resumeTime) {
-			sc.co.resume(&resumeValue{nil, errCoResumeTimeout})
-			// remove this coroutine
+			// remove this suspend coroutine
 			p.supCoroutines = append(p.supCoroutines[:i], p.supCoroutines[i+1:]...)
+			// resume coroutine
+			yd := sc.co.resume(&resumeValue{nil, errCoResumeTimeout})
+			p.onYield(sc.co, yd)
 		}
 	}
 
@@ -156,6 +155,18 @@ func (p *Process) onTick() {
 }
 
 func (p *Process) onCallRequest(from uint32, callID uint32, methodName string, params []interface{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			err, ok := r.(error)
+			if !ok {
+				err = fmt.Errorf("rpc call error: %v", r)
+			}
+
+			response := &msgProcessCallResponse{callID, p.id, from, nil, err}
+			RouteMessage(from, response)
+		}
+	}()
+
 	method := reflect.ValueOf(p.r).MethodByName(methodName)
 	inputs := make([]reflect.Value, len(params))
 	for i, p := range params {
@@ -174,12 +185,40 @@ func (p *Process) onCallRequest(from uint32, callID uint32, methodName string, p
 func (p *Process) onCallResponse(from uint32, callID uint32, response []interface{}, err error) {
 	for i, supCo := range p.supCoroutines {
 		if supCo.callID == callID {
+			// remove this suspend coroutine
 			p.supCoroutines = append(p.supCoroutines[:i], p.supCoroutines[i+1:]...)
-			rv := &resumeValue{response, err}
-			supCo.co.resume(rv)
+			// resume coroutine
+			yd := supCo.co.resume(&resumeValue{response, err})
+			p.onYield(supCo.co, yd)
 			return
 		}
 	}
+}
+
+func (p *Process) onYield(co *coroutine, ydata interface{}) {
+	if ydata != nil {
+		// coroutine suspend
+		yv := ydata.(*yieldValue)
+		resumeTime := p.frameTime.Add(yv.timout)
+		// add to suspend list
+		p.supCoroutines = append(p.supCoroutines, &suspendCoroutine{co, resumeTime, yv.callID})
+	} else {
+		// coroutine is finished
+		if co.panicE != nil {
+			// coroutine is panic
+			// TODO: do something?
+		}
+	}
+}
+
+func (p *Process) invokeReactorDirectly(ctx *ProcessContext) {
+	defer func() {
+		if r := recover(); r != nil {
+			// TODO: do something?
+		}
+	}()
+
+	p.r.OnReceive(ctx)
 }
 
 func (p *Process) nextCoID() uint32 {
