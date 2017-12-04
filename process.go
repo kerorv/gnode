@@ -205,8 +205,7 @@ func (p *Process) onYield(co *coroutine, ydata interface{}) {
 	} else {
 		// coroutine is finished
 		if co.panicE != nil {
-			// coroutine is panic
-			// TODO: do something?
+			p.invokeReactorDirectly(&ProcessContext{p, nil, &MsgProcessCoroutinePanic{co.panicE}})
 		}
 	}
 }
@@ -214,7 +213,7 @@ func (p *Process) onYield(co *coroutine, ydata interface{}) {
 func (p *Process) invokeReactorDirectly(ctx *ProcessContext) {
 	defer func() {
 		if r := recover(); r != nil {
-			// TODO: do something?
+			// TODO: log here
 		}
 	}()
 
