@@ -24,7 +24,7 @@ type resumeValue struct {
 	err      error
 }
 
-// Process is an excute unit in gnode system.
+// Process is an execute unit in gnode system.
 type Process struct {
 	id            uint32
 	supCoroutines []*suspendCoroutine
