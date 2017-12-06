@@ -4,7 +4,7 @@ import "net"
 
 type Server struct {
 	listener net.Listener
-	handler  ServerEventHandler
+	handler  NewSessionHandler
 }
 
 func NewServer(handler ServerEventHandler) *Server {
@@ -40,6 +40,6 @@ func (s *Server) accept() {
 		}
 
 		session := newSession(conn)
-		s.handler.OnSessionEstablish(session)
+		s.handler.OnNewSession(session)
 	}
 }

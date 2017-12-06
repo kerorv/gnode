@@ -9,7 +9,7 @@ var (
 
 type Session struct {
 	conn    net.Conn
-	handler SessionHandler
+	handler SessionEventHandler
 	codec   Codec
 	writeC  chan interface{}
 }
@@ -23,7 +23,7 @@ func newSession(conn net.Conn) *Session {
 	}
 }
 
-func (s *Session) Start(handler SessionHandler, codec Codec) {
+func (s *Session) Start(handler SessionEventHandler, codec Codec) {
 	s.handler = handler
 	s.codec = codec
 
@@ -53,7 +53,7 @@ func (s *Session) readConn() {
 
 		// parse buffer
 		if recvLen < packetHeaderSize {
-			return
+			break
 		}
 
 		for rpos := p.size(); rpos < len(p); {
@@ -70,6 +70,8 @@ func (s *Session) readConn() {
 			}
 		}
 	}
+
+	s.handler.OnBreak(s)
 }
 
 func (s *Session) writeConn() {

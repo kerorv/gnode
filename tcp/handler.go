@@ -1,10 +1,10 @@
 package tcp
 
-type ServerEventHandler interface {
-	OnSessionEstablish(*Session)
-	OnSessionBreak(*Session)
+type NewSessionHandler interface {
+	OnNewSession(*Session)
 }
 
-type SessionHandler interface {
+type SessionEventHandler interface {
 	OnMessage(*Session, interface{})
+	OnBreak(*Session)
 }
