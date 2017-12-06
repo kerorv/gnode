@@ -37,10 +37,8 @@ func (rs *RemoteService) OnNewSession(session *tcp.Session) {
 	session.Start(rs, new(ProtoCodec))
 }
 
-func (rs *RemoteService) OnMessage(session *Session, msg interface{}) {
-
+func (rs *RemoteService) OnMessage(session *tcp.Session, msg interface{}) {
 }
 
-func (rs *RemoteService) OnBreak(session *Session) {
-
+func (rs *RemoteService) OnBreak(session *tcp.Session) {
 }
