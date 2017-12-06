@@ -6,5 +6,5 @@ type NewSessionHandler interface {
 
 type SessionEventHandler interface {
 	OnMessage(*Session, interface{})
-	OnBreak(*Session)
+	OnBroken(*Session)
 }

@@ -40,38 +40,55 @@ func (s *Session) PeerAddress() string {
 }
 
 func (s *Session) Stop() {
+	close(s.writeC)
 	s.conn.Close()
 }
 
 func (s *Session) readConn() {
-	var recvLen int
-	var p = make(packet, 0, readBufferCap)
+	var p = make(Packet, 0, readBufferCap)
 
 	for {
-		size, _ := s.conn.Read(p)
-		recvLen = recvLen + size
-
-		// parse buffer
-		if recvLen < packetHeaderSize {
+		size, err := s.conn.Read(p)
+		if err != nil {
+			s.conn.Close()
 			break
 		}
 
-		for rpos := p.size(); rpos < len(p); {
-			p1 := p[rpos:]
-			if len(p1) < p1.size() {
+		// parse buffer
+		if len(p) < PacketHeaderSize {
+			continue
+		}
+
+		if int(p.Size()) > cap(p) {
+			p1 := make(Packet, 0, p.Size())
+			p1 = append(p1, p...)
+			p = p1
+		}
+
+		var rpos uint16
+		for int(rpos) < len(p) {
+			sub := p[rpos:]
+
+			if len(sub) < int(sub.Size()) {
 				break
 			}
 
-			if msg, ok := s.codec.Decode(p1); ok {
+			if msg, ok := s.codec.Decode(sub); ok {
 				s.handler.OnMessage(s, msg)
+				rpos += sub.Size()
 			} else {
 				// TODO: break connection
-				break
+				goto end
 			}
+		}
+
+		if rpos > 0 {
+			p = append(p, p[rpos:]...)
 		}
 	}
 
-	s.handler.OnBreak(s)
+end:
+	s.handler.OnBroken(s)
 }
 
 func (s *Session) writeConn() {
