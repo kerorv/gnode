@@ -8,8 +8,8 @@ import (
 	"github.com/kerorv/gnode/tcp"
 )
 
-// ProtoCodec is protobuf message codec
-// protobuf message is len(2) + name(string, '0' is end) + proto.Message([]byte)
+// ProtoCodec is a protobuf message codec
+// protobuf message is len(2) + name(string, '\0' is end) + proto.Message([]byte)
 type ProtoCodec struct {
 }
 

@@ -20,7 +20,7 @@ func (p Packet) SetSize(size uint16) {
 	binary.LittleEndian.PutUint16(p, size)
 }
 
-func MakePacket(size uint16) packet {
+func MakePacket(size uint16) Packet {
 	p := make(Packet, PacketHeaderSize, size)
 	p.SetSize(size)
 	return p

@@ -7,7 +7,7 @@ type Server struct {
 	handler  NewSessionHandler
 }
 
-func NewServer(handler ServerEventHandler) *Server {
+func NewServer(handler NewSessionHandler) *Server {
 	return &Server{
 		listener: nil,
 		handler:  handler,

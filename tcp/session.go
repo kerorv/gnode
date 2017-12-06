@@ -48,7 +48,7 @@ func (s *Session) readConn() {
 	var p = make(Packet, 0, readBufferCap)
 
 	for {
-		size, err := s.conn.Read(p)
+		_, err := s.conn.Read(p)
 		if err != nil {
 			s.conn.Close()
 			break
