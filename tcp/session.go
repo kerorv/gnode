@@ -1,41 +1,51 @@
 package tcp
 
-import (
-	"net"
-
-	"github.com/kerorv/gnode"
-)
+import "net"
 
 var (
-	writeChanCap    = 64
-	readBufferSize  = 1024
-	writeBufferSize = 1024
+	writeChanCap  = 64
+	readBufferCap = 1024
 )
 
-type session struct {
+type Session struct {
 	conn    net.Conn
-	handler uint32
+	handler SessionHandler
 	codec   Codec
 	writeC  chan interface{}
 }
 
-func newSession(conn net.Conn, backend uint32, codec Codec) *session {
-	return &session{
+func newSession(conn net.Conn) *Session {
+	return &Session{
 		conn:    conn,
-		handler: backend,
-		codec:   codec,
+		handler: nil,
+		codec:   nil,
 		writeC:  make(chan interface{}, writeChanCap),
 	}
 }
 
-func (s *session) start() {
+func (s *Session) Start(handler SessionHandler, codec Codec) {
+	s.handler = handler
+	s.codec = codec
+
 	go s.readConn()
 	go s.writeConn()
 }
 
-func (s *session) readConn() {
+func (s *Session) Write(msg interface{}) {
+	s.writeC <- msg
+}
+
+func (s *Session) PeerAddress() string {
+	return s.conn.RemoteAddr().String()
+}
+
+func (s *Session) Stop() {
+	s.conn.Close()
+}
+
+func (s *Session) readConn() {
 	var recvLen int
-	var p = make(packet, readBufferSize)
+	var p = make(packet, 0, readBufferCap)
 
 	for {
 		size, _ := s.conn.Read(p)
@@ -53,7 +63,7 @@ func (s *session) readConn() {
 			}
 
 			if msg, ok := s.codec.Decode(p1); ok {
-				gnode.RouteMessage(s.handler, msg)
+				s.handler.OnMessage(s, msg)
 			} else {
 				// TODO: break connection
 				break
@@ -62,7 +72,7 @@ func (s *session) readConn() {
 	}
 }
 
-func (s *session) writeConn() {
+func (s *Session) writeConn() {
 	for {
 		select {
 		case msg := <-s.writeC:
@@ -83,8 +93,4 @@ func (s *session) writeConn() {
 			}
 		}
 	}
-}
-
-func (s *session) stop() {
-	s.conn.Close()
 }

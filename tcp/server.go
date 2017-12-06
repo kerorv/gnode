@@ -3,52 +3,43 @@ package tcp
 import "net"
 
 type Server struct {
-	l        net.Listener
-	handler  uint32
-	codec    Codec
-	sessions []*session
+	listener net.Listener
+	handler  ServerEventHandler
 }
 
-func NewServer(backend uint32, codec Codec) *Server {
+func NewServer(handler ServerEventHandler) *Server {
 	return &Server{
-		l:        nil,
-		handler:  backend,
-		codec:    codec,
-		sessions: make([]*session, 0, 64),
+		listener: nil,
+		handler:  handler,
 	}
 }
 
-func (s *Server) Start(address string) error {
+func (s *Server) Start(address string) bool {
 	l, err := net.Listen("tcp", address)
 	if err != nil {
-		return err
+		return false
 	}
 
-	s.l = l
+	s.listener = l
 	go s.accept()
-	return nil
+	return true
+}
+
+func (s *Server) Stop() {
+	s.listener.Close()
 }
 
 func (s *Server) accept() {
-	defer s.l.Close()
+	defer s.listener.Close()
 
 	for {
-		conn, err := s.l.Accept()
+		conn, err := s.listener.Accept()
 		if err != nil {
 			// TODO: how to distinguish whether listen socket closed or accept error
 			return
 		}
 
-		ss := newSession(conn, s.handler, s.codec)
-		s.sessions = append(s.sessions, ss)
-		ss.start()
-	}
-}
-
-func (s *Server) Stop() {
-	s.l.Close()
-
-	for _, ss := range s.sessions {
-		ss.stop()
+		session := newSession(conn)
+		s.handler.OnSessionEstablish(session)
 	}
 }
