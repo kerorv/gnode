@@ -153,7 +153,7 @@ func DestroyProcess(pid uint32) {
 	p.stop()
 }
 
-// RouteMessage reoute a messag to the target process
+// RouteMessage route a messag to the target process
 func RouteMessage(target uint32, msg interface{}) {
 	if gsys == nil {
 		return

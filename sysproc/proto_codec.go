@@ -1,7 +1,6 @@
 package sysproc
 
 import (
-	"encoding/binary"
 	"reflect"
 
 	"github.com/golang/protobuf/proto"
@@ -9,12 +8,12 @@ import (
 )
 
 // ProtoCodec is a protobuf message codec
-// protobuf message is len(2) + name(string, '\0' is end) + proto.Message([]byte)
+// protobuf message is len(2 bytes) + name(string, '\0' is end) + proto.Message([]byte)
 type ProtoCodec struct {
 }
 
 func (pc *ProtoCodec) Encode(msg interface{}) (tcp.Packet, bool) {
-	pb, ok := msg.(*proto.Message)
+	pb, ok := msg.(proto.Message)
 	if !ok {
 		return nil, false
 	}
@@ -22,8 +21,9 @@ func (pc *ProtoCodec) Encode(msg interface{}) (tcp.Packet, bool) {
 	name := proto.MessageName(pb)
 	nonProtoSize := tcp.PacketHeaderSize + len(name) + 1
 	size := nonProtoSize + proto.Size(pb)
-	p := tcp.MakePacket(size)
-	p = append(p[tcp.PacketHeaderSize, []byte(name), 0)
+	p := tcp.MakePacket(uint16(size))
+	p = append(p, []byte(name)...)
+	p = append(p, 0)
 
 	buf := proto.NewBuffer(p[nonProtoSize:])
 	if err := buf.Marshal(pb); err != nil {
